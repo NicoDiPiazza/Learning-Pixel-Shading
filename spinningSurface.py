@@ -2,13 +2,17 @@ import pygame
 import math
 import numpy
 from PIL import Image
+from random import random
 
 pygame.init()
 
 
 
 #functions
-def drawPoint(pt: list, origin: list, screenOrigin: list, pic):
+def drawPoint(pt: list, origin: list, screenOrigin: list, pic, lightSource: list):
+
+    #The max light value we can have is 255, sooooo...
+    maxLight = 255
     x = pt[0]
     y = pt[1]
     z = pt[2]
@@ -17,10 +21,27 @@ def drawPoint(pt: list, origin: list, screenOrigin: list, pic):
     xCoord = screenOrigin[0] + ((origin[0] + x) * 1/((0.001 * z)+cameraDistance))
     yCoord = screenOrigin[1] - ((origin[1] + y) * 1/((0.001 * z)+cameraDistance))
 
+    lightX = lightSource[0]
+    lightY = lightSource[1]
+    lightZ = lightSource[2]
+    lightStrength = lightSource[3]
+
+    a = lightX - x
+    b = lightY - y
+    c = lightZ - z
+
+    lightDist = math.sqrt(a**2 + b**2 + c**2)
+
+    diffusePercent = lightStrength / lightDist
+    if diffusePercent > 1:
+        diffusePercent = 1
+
+    lightLevel = math.ceil(diffusePercent**5 * maxLight)
+
     if 0 < xCoord < pic.width and 0 < yCoord < pic.height:
-        pic.load()[xCoord, yCoord] = 255
+        pic.load()[xCoord, yCoord] = lightLevel
 
-def drawLine(start: list, end: list, origin: list, screenOrigin: list, pic, density: float):
+def drawLine(start: list, end: list, origin: list, screenOrigin: list, pic, density: float, lightSource: list):
     stepSizeX = (end[0] - start[0])/density
     stepSizeY = (end[1] - start[1])/density
     stepSizeZ = (end[2] - start[2])/density
@@ -29,9 +50,9 @@ def drawLine(start: list, end: list, origin: list, screenOrigin: list, pic, dens
         currentPointY = (start[1] + (stepSizeY * i))
         currentPointZ = (start[2] + (stepSizeZ * i))
         currentPoint = [currentPointX, currentPointY, currentPointZ]
-        drawPoint(currentPoint, origin, screenOrigin, pic)
+        drawPoint(currentPoint, origin, screenOrigin, pic, lightSource)
 
-def drawFace(start: list, end: list, pivot:list, origin: list, screenOrigin: list, pic, density: float):
+def drawFace(start: list, end: list, pivot:list, origin: list, screenOrigin: list, pic, density: float, lightSource: list):
     stepSizeX = (end[0] - start[0])/density
     stepSizeY = (end[1] - start[1])/density
     stepSizeZ = (end[2] - start[2])/density
@@ -40,7 +61,7 @@ def drawFace(start: list, end: list, pivot:list, origin: list, screenOrigin: lis
         currentPointY = (start[1] + (stepSizeY * i))
         currentPointZ = (start[2] + (stepSizeZ * i))
         currentPoint = [currentPointX, currentPointY, currentPointZ]
-        drawLine(pivot, currentPoint, origin, screenOrigin, pic, density)
+        drawLine(pivot, currentPoint, origin, screenOrigin, pic, density, lightSource)
 
 #variables
 stop = False
@@ -66,7 +87,12 @@ pointOne = [0, 50, 0]
 pointTwo = [-50, -50, 0]
 pointThree = [50, -50, 0]
 normVec = 0
-density = 25
+
+
+density = 10
+sun = [-300, 300, 0, 300] #x, y, z, strength
+sunRadius = 50
+
 
 #main loop
 while ( stop != True):
@@ -77,6 +103,12 @@ while ( stop != True):
             if event.key == pygame.K_q:
                 #stops the loop
                 stop = True
+
+    mouseX, mouseY = pygame.mouse.get_pos()
+
+
+    sun[0], sun[1] = mouseX - width/2, -(mouseY - height/2)
+
 
 # function for using z distance to know how much the point should be moved toward the center, where z is the distance
 #                from the camera plus some constant, and x and y are defined relative to the center of the screen:
@@ -109,9 +141,18 @@ while ( stop != True):
     img = Image.new('L', [width, height], 0)
 
 
-    drawFace(pointOne, pointTwo, pointThree, origin, screenCenter, img, density)
-    drawFace(pointThree, pointOne, pointTwo, origin, screenCenter, img, density)
-    drawFace(pointTwo, pointThree, pointOne, origin, screenCenter, img, density)
+    drawFace(pointOne, pointTwo, pointThree, origin, screenCenter, img, density, sun)
+    drawFace(pointThree, pointOne, pointTwo, origin, screenCenter, img, density, sun)
+    drawFace(pointTwo, pointThree, pointOne, origin, screenCenter, img, density, sun)
+
+    for i in range(500):
+
+        xOffset = random() * sunRadius - (sunRadius/2)
+        yOffset = random() * sunRadius - (sunRadius/2)
+        xCoord = screenCenter[0] + sun[0] + xOffset
+        yCoord = screenCenter[1] - sun[1] + yOffset
+        if 0 < xCoord < img.width and 0 < yCoord < img.height: 
+            img.load()[xCoord, yCoord] = 255
 
 
     img.save('square.jpg')
