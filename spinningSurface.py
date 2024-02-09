@@ -3,69 +3,30 @@ import math
 import numpy
 from PIL import Image
 from random import random
+from surfaceFunctions import drawFace
 
 pygame.init()
 
 
 
 #functions
-def drawPoint(pt: list, origin: list, screenOrigin: list, pic, lightSource: list):
 
-    #The max light value we can have is 255, sooooo...
-    maxLight = 255
-    x = pt[0]
-    y = pt[1]
-    z = pt[2]
-    cameraDistance = 1 # keep at 1 or above to prevent crashes (definitely above zero)
-    #formula: 1/[(0.01z)+1]
-    xCoord = screenOrigin[0] + ((origin[0] + x) * 1/((0.001 * z)+cameraDistance))
-    yCoord = screenOrigin[1] - ((origin[1] + y) * 1/((0.001 * z)+cameraDistance))
+def draw3D(points: list, origin: list, screenOrigin: list, pic, density: float, lightSource: list, surfNormal: list):
 
-    lightX = lightSource[0]
-    lightY = lightSource[1]
-    lightZ = lightSource[2]
-    lightStrength = lightSource[3]
+    for i in range(len(points) - 1):
 
-    a = lightX - x
-    b = lightY - y
-    c = lightZ - z
+        if i < len(points) - 2:
+            drawFace(points[i], points[i+1], points[i+2], origin, screenOrigin, pic, density, lightSource, surfNormal)
+        
+        elif i < len(points) - 1:
+            drawFace(points[i], points[i+1], points[0], origin, screenOrigin, pic, density, lightSource, surfNormal)
+        else:
+            drawFace(points[i], points[0], points[1], origin, screenOrigin, pic, density, lightSource, surfNormal)
 
-    lightDist = math.sqrt(a**2 + b**2 + c**2)
 
-    diffusePercent = lightStrength / lightDist
-    if diffusePercent > 1:
-        diffusePercent = 1
-
-    lightLevel = math.ceil(diffusePercent**5 * maxLight)
-
-    if 0 < xCoord < pic.width and 0 < yCoord < pic.height:
-        pic.load()[xCoord, yCoord] = lightLevel
-
-def drawLine(start: list, end: list, origin: list, screenOrigin: list, pic, density: float, lightSource: list):
-    stepSizeX = (end[0] - start[0])/density
-    stepSizeY = (end[1] - start[1])/density
-    stepSizeZ = (end[2] - start[2])/density
-    for i in range(density):
-        currentPointX = (start[0] + (stepSizeX * i))
-        currentPointY = (start[1] + (stepSizeY * i))
-        currentPointZ = (start[2] + (stepSizeZ * i))
-        currentPoint = [currentPointX, currentPointY, currentPointZ]
-        drawPoint(currentPoint, origin, screenOrigin, pic, lightSource)
-
-def drawFace(start: list, end: list, pivot:list, origin: list, screenOrigin: list, pic, density: float, lightSource: list):
-    stepSizeX = (end[0] - start[0])/density
-    stepSizeY = (end[1] - start[1])/density
-    stepSizeZ = (end[2] - start[2])/density
-    for i in range(density):
-        currentPointX = (start[0] + (stepSizeX * i))
-        currentPointY = (start[1] + (stepSizeY * i))
-        currentPointZ = (start[2] + (stepSizeZ * i))
-        currentPoint = [currentPointX, currentPointY, currentPointZ]
-        drawLine(pivot, currentPoint, origin, screenOrigin, pic, density, lightSource)
 
 #variables
 stop = False
-dt = 100
 width = 1000
 height = 800
 screen = pygame.display.set_mode((width, height))
@@ -73,6 +34,8 @@ img = Image.new('L', [width, height], 0)
 screenCenterX = width/2
 screenCenterY = height/2
 screenCenter = [screenCenterX, screenCenterY]
+
+clock = pygame.time.Clock()
 
 #making this so that in theory any shape defined relative to a set position in 3D space will be anchored to it, in case the camera ceases to
 #   be fixed, and moves relative to the anchor position (format: [x, y, z]) (lower Ys are lower on the screen)
@@ -86,11 +49,12 @@ shapeWidth = 400
 pointOne = [0, 50, 0]
 pointTwo = [-50, -50, 0]
 pointThree = [50, -50, 0]
-normVec = 0
+normVec = [0, 0, 1]
+thetaNV = 0
 
 
-density = 10
-sun = [-300, 300, 0, 300] #x, y, z, strength
+density = 25
+sun = [-300, 300, 400, 1000] #x, y, z, strength
 sunRadius = 50
 
 
@@ -129,21 +93,36 @@ while ( stop != True):
 #       width and height of the shape on screen, and then using those to find the ratio such that each pixel is checked less,
 #       using shapeWidth/screenWidth = stepWidth
 
-    pointOne = [0, shapeHeight/2, 0]
-    pointTwo = [(shapeWidth/2) * math.cos(normVec), -shapeHeight/2, (shapeWidth/2) * math.sin(normVec)]
-    pointThree = [(-shapeWidth/2) * math.cos(normVec), -shapeHeight/2, (-shapeWidth/2) * math.sin(normVec)]
-    normVec = normVec + 0.2
 
-    if abs(normVec) > math.pi * 2:
-        normVec = 0
+#note that while the normal vector of the surface is constant, the direction from which light is hitting changes slightly at each
+#       point, because the light is from a point, not a plane. As such, as, for ex. you go lower on the plane, the angle from the point
+#       of light to the current point changes because the coordinates of the point changes.
+#           However, note additionally that as the size of faces goes down and poly counts go up, the change of angle goes down,
+#       and this means it is not as neccessary to calculate the dot product of the angles for every point, and to optimize (even though
+#       it isn't as accurate in lighting) we can calculate for the center of the face, and just apply that light vector to every point.
+#       similarly, in any instance where the light source is sufficiently far away, such as the sun, then the angle difference becomes
+#       equally negligable. While this is a sad sacrifice to make, and should be remedied if possible, but in the meantime, it is ok.
+
+
+    pointOne = [0, shapeHeight/2, 0]
+    pointTwo = [(shapeWidth/2) * math.cos(thetaNV), -shapeHeight/2, (shapeWidth/2) * math.sin(thetaNV)]
+    pointThree = [(-shapeWidth/2) * math.cos(thetaNV), -shapeHeight/2, (-shapeWidth/2) * math.sin(thetaNV)]
+    thetaNV = thetaNV + 0.2
+    normVec[0] = math.sin(thetaNV)
+    normVec[2] = math.cos(thetaNV)
+
+    if abs(thetaNV) > math.pi * 2:
+        thetaNV = 0
+        normVec[0] = 0
+        normVec[2] = 1
 
 
     img = Image.new('L', [width, height], 0)
 
-
-    drawFace(pointOne, pointTwo, pointThree, origin, screenCenter, img, density, sun)
-    drawFace(pointThree, pointOne, pointTwo, origin, screenCenter, img, density, sun)
-    drawFace(pointTwo, pointThree, pointOne, origin, screenCenter, img, density, sun)
+    #if normVec[2] > 0:
+    drawFace(pointOne, pointTwo, pointThree, origin, screenCenter, img, density, sun, normVec)
+    drawFace(pointThree, pointOne, pointTwo, origin, screenCenter, img, density, sun, normVec)
+    drawFace(pointTwo, pointThree, pointOne, origin, screenCenter, img, density, sun, normVec)
 
     for i in range(500):
 
@@ -162,10 +141,17 @@ while ( stop != True):
     
     
     screen.blit(square, (0, 0))
+
+
     
 
 
  #time between each frame
-    pygame.time.wait(dt)
+    clock.tick()
+    #print(clock.get_fps())
+    # currently at 23.69
+    # linearly interpolating light levels takes it down to 19.84
+    #or not, it's really fluxuating. Regardless, there is not a significant change in frame rate with linear interpolation :(
+    
     #updates the frame
     pygame.display.update()
